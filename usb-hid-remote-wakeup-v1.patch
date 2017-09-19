@@ -1,0 +1,34 @@
+Currently linux HID gadgets do not support remote wakeup (the ability
+to wake up a host from suspend). This is an important feature for
+gadgets that want to properly emulate the normal operation of a mouse
+and keyboard. Ultimately, This feature has to be enabled/supported by
+the underlying UDC driver to have any impact.
+
+
+Signed-off-by: Abdulhadi Mohamed <abdulahhadi2@gmail.com>
+---
+ drivers/usb/gadget/function/f_hid.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/usb/gadget/function/f_hid.c b/drivers/usb/gadget/function/f_hid.c
+index c60b882..eeb01bd 100644
+--- a/drivers/usb/gadget/function/f_hid.c
++++ b/drivers/usb/gadget/function/f_hid.c
+@@ -339,6 +339,7 @@ static ssize_t f_hidg_write(struct file *file, const char __user *buffer,
+                            size_t count, loff_t *offp)
+ {
+        struct f_hidg *hidg  = file->private_data;
++       struct usb_composite_dev *cdev = hidg->func.config->cdev;
+        struct usb_request *req;
+        unsigned long flags;
+        ssize_t status = -ENOMEM;
+@@ -346,6 +347,7 @@ static ssize_t f_hidg_write(struct file *file, const char __user *buffer,
+        if (!access_ok(VERIFY_READ, buffer, count))
+                return -EFAULT;
+
++       usb_gadget_wakeup(cdev->gadget);
+        spin_lock_irqsave(&hidg->write_spinlock, flags);
+
+ #define WRITE_COND (!hidg->write_pending)
+--
+2.9.3

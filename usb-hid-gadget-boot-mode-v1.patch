@@ -1,0 +1,81 @@
+This patch is required to implement the set_procotol and get_procotol commands
+for HID gadgets to interact with the BIOS using the BOOT protocol according to
+the HID specification. These two commands are also required to implement remote
+wake up for HID gadgets once the BIOS takes control of the device.
+
+This issue was first raised by Golmer Palmer in May 25 2015 but was never followed
+up on. This version of the patch is also heavily based on the patch provided by
+Alan Stern with some added support for remote wakeup.
+
+Abdul Mohamed
+
+---
+ drivers/usb/gadget/function/f_hid.c | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/drivers/usb/gadget/function/f_hid.c b/drivers/usb/gadget/function/f_hid.c
+index 5eea448..ea38e36 100644
+--- a/drivers/usb/gadget/function/f_hid.c
++++ b/drivers/usb/gadget/function/f_hid.c
+@@ -44,6 +44,7 @@ struct f_hidg {
+        /* configuration */
+        unsigned char                   bInterfaceSubClass;
+        unsigned char                   bInterfaceProtocol;
++       unsigned char                   protocol_is_report;
+        unsigned short                  report_desc_length;
+        char                            *report_desc;
+        unsigned short                  report_length;
+@@ -338,10 +339,13 @@ static ssize_t f_hidg_write(struct file *file, const char __user *buffer,
+                            size_t count, loff_t *offp)
+ {
+        struct f_hidg *hidg  = file->private_data;
++       struct usb_composite_dev        *cdev = hidg->func.config->cdev;
+        struct usb_request *req;
+        unsigned long flags;
+        ssize_t status = -ENOMEM;
+
++       usb_gadget_wakeup(cdev->gadget);
++
+        if (!access_ok(VERIFY_READ, buffer, count))
+                return -EFAULT;
+
+@@ -528,6 +532,9 @@ static int hidg_setup(struct usb_function *f,
+                  | HID_REQ_GET_PROTOCOL):
+                VDBG(cdev, "get_protocol\n");
+                goto stall;
++               length = min_t(unsigned, length, 1);
++               ((u8 *) req->buf)[0]    = hidg->protocol_is_report;
++               goto respond;
+                break;
+
+        case ((USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE) << 8
+@@ -539,6 +546,17 @@ static int hidg_setup(struct usb_function *f,
+        case ((USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE) << 8
+                  | HID_REQ_SET_PROTOCOL):
+                VDBG(cdev, "set_protocol\n");
++               if (value > 1)
++                       goto stall;
++               length = 0;
++               /*
++                * We assume that programs implementing the Boot protocol
++                * are also compatible with the Report protocol.
++                */
++               if(hidg->bInterfaceSubClass == USB_INTERFACE_SUBCLASS_BOOT) {
++                               hidg->protocol_is_report = value;
++                               goto respond;
++               }
+                goto stall;
+                break;
+
+@@ -768,6 +786,7 @@ static int hidg_bind(struct usb_configuration *c, struct usb_function *f)
+        /* set descriptor dynamic values */
+        hidg_interface_desc.bInterfaceSubClass = hidg->bInterfaceSubClass;
+        hidg_interface_desc.bInterfaceProtocol = hidg->bInterfaceProtocol;
++       hidg->protocol_is_report = 1;
+        hidg_ss_in_ep_desc.wMaxPacketSize = cpu_to_le16(hidg->report_length);
+        hidg_ss_in_comp_desc.wBytesPerInterval =
+                                cpu_to_le16(hidg->report_length);
+
+
+--
+2.9.3
